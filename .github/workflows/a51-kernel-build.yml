@@ -16,7 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Prepare tools
-        run: brew install flex bison m4 automake autoconf
+        run: brew install flex bison m4 automake autoconf make
       - name: Prepare pinned XNU
         run: |
           set -euxo pipefail
@@ -30,9 +30,14 @@ jobs:
         working-directory: platform
         run: |
           set -euxo pipefail
-          export PATH="$(brew --prefix flex)/bin:$(brew --prefix bison)/bin:$(brew --prefix m4)/bin:$PATH"
+          export PATH="$(brew --prefix make)/libexec/gnubin:$(brew --prefix flex)/bin:$(brew --prefix bison)/bin:$(brew --prefix m4)/bin:$PATH"
           make a51_defconfig DEVICE=a51
-          bash xnu-deps/setup.sh 2>&1 | tee dependencies.log
+          bash xnu-deps/setup.sh 2>&1 | tee dependencies.log || {
+            echo "::group::Kernel header export diagnostics"
+            cat xnu-deps/exporthdrs.log || true
+            echo "::endgroup::"
+            exit 1
+          }
           make kernel DEVICE=a51 JOBS=3 2>&1 | tee kernel-build.log
           test -s hakios-kernel
           file hakios-kernel
