@@ -1,0 +1,37 @@
+name: A51 kernel preparation
+on:
+  push:
+    paths:
+      - '.github/workflows/a51-kernel-preparation.yml'
+      - 'patches/current-xnu.patch'
+      - 'platform/**'
+      - 'manifests/current-sources.json'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch pinned Apple XNU and apply cumulative patch
+        run: |
+          set -euxo pipefail
+          mkdir -p platform/xnu-src/xnu-8796.121.2
+          git -C platform/xnu-src/xnu-8796.121.2 init
+          git -C platform/xnu-src/xnu-8796.121.2 fetch --depth=1 https://github.com/apple-oss-distributions/xnu.git c54f35ca767986246321eb901baf8f5ff7923f6a
+          git -C platform/xnu-src/xnu-8796.121.2 checkout --detach FETCH_HEAD
+          git -C platform/xnu-src/xnu-8796.121.2 apply --check "$PWD/patches/current-xnu.patch"
+          git -C platform/xnu-src/xnu-8796.121.2 apply "$PWD/patches/current-xnu.patch"
+      - name: Generate A51 configuration
+        working-directory: platform
+        run: |
+          set -euxo pipefail
+          make a51_defconfig DEVICE=a51
+          make config DEVICE=a51
+      - uses: actions/upload-artifact@v4
+        with:
+          name: a51-kernel-configuration
+          path: platform/.config
+          include-hidden-files: true
+          if-no-files-found: error
