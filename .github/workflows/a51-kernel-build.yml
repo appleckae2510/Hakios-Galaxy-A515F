@@ -1,0 +1,54 @@
+name: A51 XNU kernel build
+on:
+  push:
+    paths:
+      - '.github/workflows/a51-kernel-build.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  kernel:
+    runs-on: macos-15
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare tools
+        run: brew install flex bison m4 automake autoconf
+      - name: Prepare pinned XNU
+        run: |
+          set -euxo pipefail
+          mkdir -p platform/xnu-src/xnu-8796.121.2
+          git -C platform/xnu-src/xnu-8796.121.2 init
+          git -C platform/xnu-src/xnu-8796.121.2 fetch --depth=1 https://github.com/apple-oss-distributions/xnu.git c54f35ca767986246321eb901baf8f5ff7923f6a
+          git -C platform/xnu-src/xnu-8796.121.2 checkout --detach FETCH_HEAD
+          git -C platform/xnu-src/xnu-8796.121.2 apply --check "$PWD/patches/current-xnu.patch"
+          git -C platform/xnu-src/xnu-8796.121.2 apply "$PWD/patches/current-xnu.patch"
+      - name: Configure and compile
+        working-directory: platform
+        run: |
+          set -euxo pipefail
+          export PATH="$(brew --prefix flex)/bin:$(brew --prefix bison)/bin:$(brew --prefix m4)/bin:$PATH"
+          make a51_defconfig DEVICE=a51
+          bash xnu-deps/setup.sh 2>&1 | tee dependencies.log
+          make kernel DEVICE=a51 JOBS=3 2>&1 | tee kernel-build.log
+          test -s hakios-kernel
+          file hakios-kernel
+          shasum -a 256 hakios-kernel > hakios-kernel.sha256
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: a51-kernel-build-logs
+          path: |
+            platform/*.log
+            platform/xnu-deps/*.log
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: a51-xnu-kernel
+          path: |
+            platform/hakios-kernel
+            platform/hakios-kernel.sha256
+          if-no-files-found: error
